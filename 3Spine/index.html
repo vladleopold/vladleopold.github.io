@@ -1,27 +1,119 @@
-<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="description" content="PSD to Spine animation using a private cloud animation service">
-<title>3Spine — Animator</title>
-<style>
-:root{color-scheme:dark;font:16px/1.5 system-ui,sans-serif;background:#0e0e12;color:#f0f0f5}
-*{box-sizing:border-box}body{margin:0}header,main,footer{max-width:900px;margin:auto;padding:24px}
-header{display:flex;align-items:center;gap:12px}h1{font-size:1.3rem;letter-spacing:.09em;margin:0}
-small,p.note,footer{color:#acacbb}main{display:grid;gap:18px}.card{border:1px solid #373744;border-radius:12px;background:#1c1c23;padding:20px}
-h2{margin:0 0 12px;font-size:1.05rem}label{display:block;margin:10px 0 6px}
-input[type=url],textarea{width:100%;background:#111116;color:#fff;border:1px solid #555566;padding:12px;border-radius:7px;font:inherit}
-textarea{min-height:110px;resize:vertical}button,.download{display:inline-block;background:#f08748;color:#161115;padding:11px 20px;border:0;border-radius:7px;text-decoration:none;font:inherit;font-weight:650;cursor:pointer}
-button:disabled{opacity:.5;cursor:not-allowed}#preview{display:none;max-width:100%;max-height:360px;margin:12px auto}
-#download{display:none}#status{white-space:pre-wrap;overflow-wrap:anywhere;min-height:2em}a{color:#ffad75}
-</style>
-<script defer src="https://cdn.jsdelivr.net/npm/ag-psd@14.5.2/dist/bundle.js"></script>
-<script defer src="./app.js"></script></head>
-<body><header><h1>3SPINE</h1><small>v1.0</small></header>
-<main><section class="card"><h2>Source</h2><label for="url">PSD URL</label>
-<input id="url" type="url" autocomplete="off" placeholder="Direct HTTPS PSD link">
-<label for="file">Or open a file</label><input id="file" type="file" accept=".psd,image/vnd.adobe.photoshop">
-<canvas id="preview" aria-label="PSD source preview"></canvas><p id="info" class="note">No examples. Your original artwork stays the source.</p></section>
-<section class="card"><h2>Motion</h2><label for="prompt">Describe the animation</label>
-<textarea id="prompt" placeholder="Describe the motion"></textarea>
-<p><button id="create">Сделать всё</button> <a id="download" class="download" download="spine-animation.zip">Download</a></p>
-<div id="status" role="status" aria-live="polite"></div></section></main>
-<footer>Browser interface only. No decompiler, licensed Spine Editor, or private animation-agent code is published here.</footer></body></html>
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spine Converter — v1.0</title>
+<link rel="stylesheet" href="css/style.css?v=14">
+
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <div class="logo" aria-hidden="true">
+      <svg viewBox="0 0 48 48" width="34" height="34">
+        <g fill="none" stroke="#f2a65a" stroke-width="4" stroke-linecap="round">
+          <line x1="24" y1="8" x2="24" y2="30"/>
+          <line x1="24" y1="20" x2="10" y2="12"/>
+          <line x1="24" y1="20" x2="38" y2="12"/>
+          <line x1="24" y1="20" x2="14" y2="36"/>
+          <line x1="24" y1="20" x2="34" y2="36"/>
+        </g>
+        <circle cx="24" cy="8" r="4" fill="#fff" stroke="none"/>
+        <circle cx="24" cy="30" r="4" fill="#f2a65a" stroke="none"/>
+      </svg>
+    </div>
+    <div>
+      <h1>Spine Converter</h1>
+      <span class="ver">v1.0</span>
+    </div>
+  </div>
+  <div class="conn">
+    <span id="srv" class="health" title="Статус сервера конвертации"><i class="dot"></i></span>
+  </div>
+</header>
+
+<main>
+  <section class="pick">
+    <div id="dropzone" class="dropzone" tabindex="0">
+      <div class="dz-icon" aria-hidden="true">📁</div>
+      <p class="dz-title">Перетащите папку или zip-архив</p>
+      <p class="dz-sub">binary json, skel, txt, atlas, xml, png, jpeg, gif, webp, avif convert to Spine</p>
+      <button id="pick-folder" class="btn primary">Выбрать папку…</button>
+      <button id="pick-zip" class="btn ghost">или zip-архив…</button>
+      <input id="folder-input" type="file" webkitdirectory directory multiple hidden>
+      <input id="zip-input" type="file" accept=".zip,application/zip" hidden>
+    </div>
+    <div class="url-row">
+      <input id="src-url" type="url" spellcheck="false"
+             placeholder="Ссылка на игру — выкачаем анимации сами (например https://site/launch?gameName=my_game)">
+      <button id="url-clear" class="btn ghost small" type="button" title="Очистить ссылку">×</button>
+    </div>
+    <p class="url-note">Если ссылка указана, файлы скачиваются с площадки: скелеты 3.8 (.json), атласы и текстуры. Папка и zip не нужны.</p>
+    <div id="file-summary" class="file-summary hidden">
+      <p>Выбрано файлов: <b id="file-count">0</b></p>
+      <div id="file-list" class="file-list"></div>
+    </div>
+  </section>
+
+  <section class="runpanel hidden" id="run-panel" role="region" aria-live="polite">
+    <div class="runpanel-head">
+      <div class="run-spin" aria-hidden="true"></div>
+      <div class="run-title" id="run-title">Проход запущен</div>
+      <div class="run-badge" id="run-badge">in_progress</div>
+      <div class="run-job" id="run-job"></div>
+    </div>
+    <p class="run-step" id="run-step">Запускаю сборку…</p>
+    <div class="run-bar" role="progressbar" aria-label="Прогресс сборки"><i></i></div>
+    <div class="run-foot">
+      <span>прошло: <b id="run-elapsed">0 c</b></span>
+      <span>обычно 1–3 мин, максимум 9 мин</span>
+      <span id="run-hint">Скачивание идёт в GitHub Actions — можно не закрывать вкладку</span>
+    </div>
+  </section>
+
+  <section class="previews hidden" id="previews-panel" role="region" aria-labelledby="previews-title" tabindex="-1">
+    <div class="logs-head">
+      <span id="previews-title">Анимации</span>
+      <button id="previews-back" class="btn ghost small"><span aria-hidden="true">←</span> К загрузке</button>
+    </div>
+    <div id="previews-grid" class="previews-grid"></div>
+    <div class="previews-note">В карточке — остановленный кадр анимации. Наведите, коснитесь или сфокусируйтесь — она оживёт, и можно выбрать конкретную анимацию. «Скачать вместе с картинками» собирает архив: .spine + текстуры этого скелета.</div>
+  </section>
+
+  <section class="actions">
+    <button id="start" class="btn primary big" disabled>Start</button>
+    <a id="download" class="btn success big hidden" href="#" download>Скачать результат</a>
+    <button id="clear" class="btn ghost">Очистить</button>
+  </section>
+
+  <section class="logs">
+    <div class="logs-head">
+      <span>Лог</span>
+      <span id="status" class="status" aria-live="polite">готов</span>
+    </div>
+    <div id="fetch-verdict" class="fetch-verdict hidden"></div>
+    <pre id="log" class="log"></pre>
+  </section>
+
+  <section class="history">
+    <div class="logs-head">
+      <span>История конвертаций</span>
+      <button id="hist-refresh" class="btn ghost small">Обновить</button>
+    </div>
+    <div id="history-list" class="history-list">
+      <div class="history-empty">загрузка…</div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="stats-line" id="stats-line">статистика: загрузка…</div>
+  <div class="foot-note">Spine Converter · GitHub Actions · <span id="build-stamp">сборка ?</span></div>
+</footer>
+
+<script src="js/jszip.min.js"></script>
+<script src="js/spine-player.js?v=33"></script>
+  <script src="js/app.js?v=21"></script>
+</body>
+</html>
